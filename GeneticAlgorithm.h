@@ -76,10 +76,12 @@ public:
     }
 
     ~GeneticAlgorithm() {
+#ifdef USE_CUDA
         if (gpuEvaluator) {
             delete gpuEvaluator;
             gpuEvaluator = nullptr;
         }
+#endif
     }
 
     // Zmodyfikowana metoda turnieju, przyjmuje konkretny RNG
