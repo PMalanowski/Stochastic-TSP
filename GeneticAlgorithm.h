@@ -75,13 +75,14 @@ public:
         }
     }
 
+#ifdef USE_CUDA
     ~GeneticAlgorithm() {
         if (gpuEvaluator) {
             delete gpuEvaluator;
             gpuEvaluator = nullptr;
         }
     }
-
+#endif
     // Zmodyfikowana metoda turnieju, przyjmuje konkretny RNG
     int runTournament(std::mt19937& localRng) {
         std::uniform_int_distribution<int> dist(0, popSize - 1);
