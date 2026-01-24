@@ -16,7 +16,9 @@ private:
     std::vector<Individual> population;
     std::vector<Individual> newPopulation;
 
+#ifdef USE_CUDA
     GpuEvaluator* gpuEvaluator = nullptr;
+#endif
 
     int popSize;
     float mutationRate;
@@ -37,8 +39,9 @@ public:
         crossoverRate = 0.9f;
         tournamentSize = 5;
 
-        // Inicjalizacja ewaluatora GPU (zostawiamy bez zmian)
+#ifdef USE_CUDA
         gpuEvaluator = new GpuEvaluator(problem, popSize);
+#endif
 
         // --- INICJALIZACJA OPENMP I RNG ---
         int maxThreads = omp_get_max_threads();
@@ -180,29 +183,23 @@ public:
             newPopulation[i] = std::move(child);
         }
 
-        // 3. Ewaluacja (Hybrydowa)
+#ifdef USE_CUDA
         if (useMonteCarlo && gpuEvaluator) {
-            // ŚCIEŻKA GPU:
-            // Jeśli mamy GPU, wysyłamy wszystko tam.
-            // GPU jest szybsze niż CPU Parallel w MC, więc nie dzielimy pracy (chyba że mamy multi-gpu).
             gpuEvaluator->evaluatePopulation(newPopulation, mcSimulations);
         } else {
-            // ŚCIEŻKA CPU (OpenMP):
-            // Jeśli nie używamy MC lub jesteśmy na słabym węźle (Laptopie),
-            // liczymy równolegle na wszystkich rdzeniach CPU.
-
+            // Fallback do CPU jeśli włączono MC ale coś poszło nie tak, lub standardowa ścieżka CPU
             #pragma omp parallel for schedule(static)
             for (int i = 0; i < popSize; ++i) {
-                // Jeśli jesteśmy w trybie CPU Deterministic:
                 newPopulation[i].evaluateDeterministic(problem);
-
-                // UWAGA: Gdybyśmy chcieli robić Monte Carlo na CPU (bardzo wolne, ale możliwe):
-                // if (useMonteCarlo) {
-                //     int tid = omp_get_thread_num();
-                //     newPopulation[i].evaluateMonteCarlo(problem, mcSimulations, threadRNGs[tid]);
-                // }
             }
         }
+#else
+        // Wersja dla Laptopa (zawsze CPU)
+#pragma omp parallel for schedule(static)
+        for (int i = 0; i < popSize; ++i) {
+            newPopulation[i].evaluateDeterministic(problem);
+        }
+#endif
 
         // 4. Podmiana populacji
         population = newPopulation;
@@ -226,14 +223,17 @@ public:
     }
 
     void reevaluatePopulation() {
-         if (useMonteCarlo && gpuEvaluator) {
+#ifdef USE_CUDA
+        if (useMonteCarlo && gpuEvaluator) {
             gpuEvaluator->evaluatePopulation(population, mcSimulations);
-         } else {
-             #pragma omp parallel for
-             for(int i=0; i<popSize; ++i) {
-                 population[i].evaluateDeterministic(problem);
-             }
-         }
+        } else {
+#pragma omp parallel for
+            for(int i=0; i<popSize; ++i) ind.evaluateDeterministic(problem);
+        }
+#else
+        #pragma omp parallel for
+        for(int i=0; i<popSize; ++i) population[i].evaluateDeterministic(problem);
+#endif
     }
 };
 

@@ -1,6 +1,8 @@
 #ifndef STOCHASTICTSP_GPUEVALUATOR_H
 #define STOCHASTICTSP_GPUEVALUATOR_H
 
+#ifdef USE_CUDA
+
 #include <vector>
 #include "TSPProblem.h"
 #include "Individual.h"
@@ -62,5 +64,8 @@ public:
         }
     }
 };
+
+#endif //USE_CUDA
+
 
 #endif //STOCHASTICTSP_GPUEVALUATOR_H
