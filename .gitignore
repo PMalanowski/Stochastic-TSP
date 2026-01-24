@@ -1,0 +1,48 @@
+# --- CLion (IDE specific) ---
+.idea/
+cmake-build-*/
+*.iws
+*.out
+*.iml
+*.ipr
+
+# --- CMake generated files ---
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CTestTestfile.cmake
+
+# --- Compiled Object files (C++ & CUDA) ---
+*.o
+*.obj
+*.so
+*.a
+*.lib
+*.dll
+*.dylib
+*.pdb
+
+# --- CUDA intermediate files ---
+*.cubin
+*.ptx
+
+# --- Executables ---
+# Domyślnie na Linux/WSL pliki wykonywalne nie mają rozszerzenia
+# Ale warto dodać nazwę Twojego projektu
+StochasticTSP
+*.exe
+
+# --- MPI specific ---
+# Plik hosts zawiera IP twoich maszyn, nie chcesz tego na publicznym repo
+hosts
+hostfile
+
+# --- OS specific ---
+.DS_Store
+Thumbs.db
+
+# --- Logs and Analysis ---
+# Jeśli twój program zrzuca wyniki do plików tekstowych
+*.log
+# *.csv # Opcjonalnie odkomentuj jeśli generujesz CSV z wynikami
