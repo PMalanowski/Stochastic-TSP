@@ -230,12 +230,18 @@ public:
         if (useMonteCarlo && gpuEvaluator) {
             gpuEvaluator->evaluatePopulation(population, mcSimulations);
         } else {
-#pragma omp parallel for
-            for(int i=0; i<popSize; ++i) ind.evaluateDeterministic(problem);
+            // Fallback do CPU
+            #pragma omp parallel for schedule(static)
+            for(int i=0; i<popSize; ++i) {
+                population[i].evaluateDeterministic(problem); // BYŁO: ind.evaluate... JEST: population[i].evaluate...
+            }
         }
 #else
-        #pragma omp parallel for
-        for(int i=0; i<popSize; ++i) population[i].evaluateDeterministic(problem);
+        // Wersja bez CUDA
+        #pragma omp parallel for schedule(static)
+        for(int i=0; i<popSize; ++i) {
+            population[i].evaluateDeterministic(problem);
+        }
 #endif
     }
 };
