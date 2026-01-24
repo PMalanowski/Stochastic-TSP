@@ -30,10 +30,13 @@ int main(int argc, char** argv) {
 
     // 3. Konfiguracja ról
     if (rank == 0) {
-        // MASTER / GPU NODE
+#ifdef USE_CUDA
         std::cout << "[Rank 0 - GPU Node] OpenMP Threads: " << omp_get_max_threads() << std::endl;
-        std::cout << "[Rank " << rank << "] Running GPU Stochastic Mode" << std::endl;
-        ga.setMode(true, MC_SAMPLES); // Włącz Monte Carlo
+        ga.setMode(true, MC_SAMPLES);
+#else
+        std::cout << "[Rank 0 - CPU ONLY Node] CUDA not compiled! Running deterministic." << std::endl;
+        ga.setMode(false, 0);
+#endif
     } else {
         // SLAVE / CPU NODES
         // Tylko jeden komunikat
