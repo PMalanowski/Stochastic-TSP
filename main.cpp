@@ -15,11 +15,12 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // --- PARAMETRY ---
-    const int NUM_CITIES = 100;
-    const int POP_SIZE = 500;       // Nieco mniejsza populacja bo mamy wiele wysp
-    const int GENERATIONS = 200;
-    const int MC_SAMPLES = 1000;
+    const int NUM_CITIES = 10000;
+    const int POP_SIZE = 20;       // Nieco mniejsza populacja bo mamy wiele wysp
+    const int GENERATIONS = 20;
+    const int MC_SAMPLES = 100;
     const int MIGRATION_INTERVAL = 20; // Co ile generacji wymiana
+    const int testMC = true; // do testowania Monte Carlo na CPU
 
     // 1. Wspólny problem (musi mieć ten sam seed!)
     TSPProblem problem(NUM_CITIES, 42);
@@ -34,15 +35,20 @@ int main(int argc, char** argv) {
         std::cout << "[Rank 0 - GPU Node] OpenMP Threads: " << omp_get_max_threads() << std::endl;
         ga.setMode(true, MC_SAMPLES);
 #else
-        std::cout << "[Rank 0 - CPU ONLY Node] CUDA not compiled! Running deterministic." << std::endl;
-        ga.setMode(false, 0);
+        std::cout << "[Rank "<< rank <<" - CPU ONLY Node] CUDA not compiled! Running ";
+        if (testMC) { // do testow zlozonosci obliczeniowej z Monte Carlo
+            ga.setMode(true, MC_SAMPLES);
+            std::cout << "Stochastic. ";
+        } else {
+            ga.setMode(false, 0);
+            std::cout << "Deterministic. ";
+        }
+        std::cout << "OpenMP Threads: " << omp_get_max_threads() << std::endl;
 #endif
     } else {
         // SLAVE / CPU NODES
-        // Tylko jeden komunikat
-        if (rank == 1) std::cout << "[Rank 1+" << "] Running CPU Deterministic Mode" << std::endl;
-        if (rank == 1) std::cout << "[Rank 1+ - CPU Node] OpenMP Threads: " << omp_get_max_threads() << std::endl;
-        ga.setMode(false, 0); // Wyłącz Monte Carlo, używaj deterministycznego
+        std::cout << "[Rank " << rank << "- CPU Node] Running CPU Deterministic Mode. OpenMP Threads: " << omp_get_max_threads() << std::endl;
+        ga.setMode(false, 0); // na laptopie tylko deterministyczny
     }
 
     Migrator migrator(NUM_CITIES);
@@ -81,7 +87,6 @@ int main(int argc, char** argv) {
         std::cout << "Best Fitness (95% VaR): " << ga.getBestFitness() << std::endl;
         std::cout << "Time: " << duration.count() << " ms" << std::endl;
     }
-    // Opcjonalnie: sprawdźmy wyniki z CPU, żeby zobaczyć różnicę w ocenie
     else if (rank == 1) {
          // Uwaga: Fitness na CPU jest liczony jako suma średnich, więc będzie niższy niż MC
          std::cout << "--- FINAL RESULTS RANK 1 (CPU) ---" << std::endl;

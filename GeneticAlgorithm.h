@@ -43,35 +43,33 @@ public:
         gpuEvaluator = new GpuEvaluator(problem, popSize);
 #endif
 
-        // --- INICJALIZACJA OPENMP I RNG ---
+        // 1. Ustawienie generatorów losowych (jeden na wątek)
         int maxThreads = omp_get_max_threads();
+        if (maxThreads < 1) maxThreads = 1;
         threadRNGs.resize(maxThreads);
 
-        // Każdy wątek dostaje inny seed bazując na głównym seedzie + id wątku
         for(int i=0; i<maxThreads; ++i) {
             threadRNGs[i].seed(seed + i * 9999);
         }
 
-        population.reserve(popSize);
-        newPopulation.resize(popSize, Individual(problem.getNumCities())); // Resize zamiast reserve dla OpenMP!
-
-        // Inicjalizacja populacji (można zrównoleglić)
-        #pragma omp parallel for
-        for (int i = 0; i < popSize; ++i) {
-            int tid = omp_get_thread_num(); // Pobierz ID wątku
-            population.emplace_back(problem.getNumCities(), threadRNGs[tid]); // Użyj RNG tego wątku (nie działa z emplace_back dynamicznie dobrze w parallel for bez pre-alokacji)
-        }
-
-        // Poprawka inicjalizacji:
-        population.clear();
+        // 2. BEZPIECZNA ALOKACJA (Kluczowe dla stabilności przy pop=5000+)
+        // Najpierw tworzymy puste kontenery w jednym wątku.
+        // Dzięki temu wektor nie zmienia rozmiaru podczas pracy wielu wątków.
         population.resize(popSize, Individual(problem.getNumCities()));
+        newPopulation.resize(popSize, Individual(problem.getNumCities()));
 
-        #pragma omp parallel for
-        for(int i=0; i<popSize; ++i) {
-             int tid = omp_get_thread_num();
-             // Nadpisz pustego osobnika nowym losowym
-             population[i] = Individual(problem.getNumCities(), threadRNGs[tid]);
-             population[i].evaluateDeterministic(problem);
+        // 3. RÓWNOLEGŁE WYPEŁNIANIE
+        // Teraz wątki bezpiecznie nadpisują konkretne indeksy [i]
+#pragma omp parallel for
+        for (int i = 0; i < popSize; ++i) {
+            int tid = omp_get_thread_num();
+            if (tid >= maxThreads) tid = 0; // Safety check
+
+            // Nadpisujemy obiekt pod indeksem i
+            population[i] = Individual(problem.getNumCities(), threadRNGs[tid]);
+
+            // Od razu oceniamy (na CPU, bo to startowa populacja)
+            population[i].evaluateDeterministic(problem);
         }
     }
 
@@ -198,9 +196,16 @@ public:
         }
 #else
         // Wersja dla Laptopa (zawsze CPU)
-#pragma omp parallel for schedule(static)
+        #pragma omp parallel for schedule(static)
         for (int i = 0; i < popSize; ++i) {
-            newPopulation[i].evaluateDeterministic(problem);
+            if (useMonteCarlo) {
+                // Wersja Stochastyczna na CPU - do testów
+                int tid = omp_get_thread_num();
+                newPopulation[i].evaluateMonteCarlo(problem, mcSimulations, threadRNGs[tid]);
+            } else {
+                // Wersja Deterministyczna na CPU
+                newPopulation[i].evaluateDeterministic(problem);
+            }
         }
 #endif
 
