@@ -28,6 +28,7 @@ public:
 
     // Prosta ocena deterministyczna (dla CPU / Weak Node)
     // Suma średnich czasów
+    //__attribute__((noinline))
     void evaluateDeterministic(const TSPProblem& problem) {
         float sum = 0.0f;
         int numCities = problem.getNumCities();
@@ -38,7 +39,6 @@ public:
         sum += problem.getMean(path[numCities-1], path[0]);
         fitness = sum;
     }
-
     // Nowa metoda: Symulacja Monte Carlo
     // k = liczba symulacji dla jednej trasy (np. 1000)
     void evaluateMonteCarlo(const TSPProblem& problem, int k, std::mt19937& globalGen) {
