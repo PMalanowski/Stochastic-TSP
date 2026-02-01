@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
     int N = 1000;    // Miasta
     int P = 100;    // Populacja
     int G = 100;     // Generacje
-    int K = 100;   // Symulacje MC
+    int K = 1000;   // Symulacje MC
     // Obsługa argumentów: ./StochasticTSP_Seq N P G K
     if (argc > 1) N = std::atoi(argv[1]);
     if (argc > 2) P = std::atoi(argv[2]);

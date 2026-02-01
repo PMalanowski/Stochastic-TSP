@@ -6,6 +6,15 @@
 #include "Migrator.h"
 #include "SimpleProfiler.h"
 
+struct Config {
+    int numCities = 100;
+    int popSize = 500;
+    int generations = 200;
+    int mcSamples = 1000;
+    int migrationInterval = 20;
+    unsigned int globalSeed = 0;
+};
+
 int main(int argc, char** argv) {
     // Inicjalizacja MPI z obsługą wielowątkowości (na wszelki wypadek dla CUDA)
     int provided;
@@ -15,30 +24,51 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
-    // --- PARAMETRY ---
-    const int NUM_CITIES = 100;
-    const int POP_SIZE = 100;       // Nieco mniejsza populacja bo mamy wiele wysp
-    const int GENERATIONS = 100;
-    const int MC_SAMPLES = 100;
-    const int MIGRATION_INTERVAL = 20; // Co ile generacji wymiana
+
     const int testMC = false; // do testowania Monte Carlo na CPU
 
+    // --- PARAMETRY ---
+    Config config;
+    if (rank == 0) {
+        // Opcja: ./program N P G K Mig Seed
+        if (argc > 1) config.numCities = std::atoi(argv[1]);
+        if (argc > 2) config.popSize = std::atoi(argv[2]);
+        if (argc > 3) config.generations = std::atoi(argv[3]);
+        if (argc > 4) config.mcSamples = std::atoi(argv[4]);
+        if (argc > 5) config.migrationInterval = std::atoi(argv[5]);
+        if (argc > 6) {
+            config.globalSeed = std::atoi(argv[6]);
+        }
+        if (config.globalSeed == 0) {
+            std::random_device rd;
+            config.globalSeed = rd();
+            std::cout << "[Rank 0] Generated random seed: " << config.globalSeed << std::endl;
+        }
+        std::cout << "--- CONFIGURATION ---" << std::endl;
+        std::cout << "Cities: " << config.numCities << ", Pop: " << config.popSize
+                  << ", Gen: " << config.generations << ", MC: " << config.mcSamples
+                  << ", Seed: " << config.globalSeed << std::endl;
+    }
+    std::cout << "[Rank " << rank << "] Connected. Creating TSP instance." <<std:: endl;
+
+    MPI_Bcast(&config, sizeof(Config), MPI_BYTE, 0, MPI_COMM_WORLD);
+
     // 1. Wspólny problem (musi mieć ten sam seed!)
-    TSPProblem problem(NUM_CITIES, 42);
+    TSPProblem problem(config.numCities, 42);
 
     // 2. Algorytm Genetyczny
     // Każdy proces ma swój inny seed losowy, żeby eksplorować inne obszary
-    GeneticAlgorithm ga(problem, POP_SIZE, 1234 + rank);
+    GeneticAlgorithm ga(problem, config.popSize, 1234 + rank);
 
     // 3. Konfiguracja ról
     if (rank == 0) {
 #ifdef USE_CUDA
         std::cout << "[Rank 0 - GPU Node] OpenMP Threads: " << omp_get_max_threads() << std::endl;
-        ga.setMode(true, MC_SAMPLES);
+        ga.setMode(true, config.mcSamples);
 #else
         std::cout << "[Rank "<< rank <<" - CPU ONLY Node] CUDA not compiled! Running ";
         if (testMC) { // do testow zlozonosci obliczeniowej z Monte Carlo
-            ga.setMode(true, MC_SAMPLES);
+            ga.setMode(true, config.mcSamples);
             std::cout << "Stochastic. ";
         } else {
             ga.setMode(false, 0);
@@ -52,7 +82,7 @@ int main(int argc, char** argv) {
         ga.setMode(false, 0); // na laptopie tylko deterministyczny
     }
 
-    Migrator migrator(NUM_CITIES);
+    Migrator migrator(config.numCities);
 
     SimpleProfiler profiler;
 
@@ -61,14 +91,14 @@ int main(int argc, char** argv) {
     double globalStart = MPI_Wtime();
 
     // --- GŁÓWNA PĘTLA ---
-    for (int i = 0; i < GENERATIONS; ++i) {
+    for (int i = 0; i < config.generations; ++i) {
 
         profiler.start("Computation");
         ga.runGeneration();
         profiler.stop("Computation");
 
         // Migracja
-        if (i % MIGRATION_INTERVAL == 0 && size > 1) {
+        if (i % config.migrationInterval == 0 && size > 1) {
             // Wymiana osobników
             profiler.start("Migration (Wait + Data)");
             migrator.exchangeBest(ga.getPopulation());
@@ -100,6 +130,8 @@ int main(int argc, char** argv) {
          std::cout << "--- FINAL RESULTS RANK 1 (CPU) ---" << std::endl;
          std::cout << "Best Fitness (Deterministic): " << ga.getBestFitness() << std::endl;
     }
+
+    profiler.saveToCSV();
 
     MPI_Finalize();
     return 0;

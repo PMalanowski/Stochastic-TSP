@@ -36,8 +36,7 @@ if(USE_CUDA)
     message(STATUS "CUDA support ENABLED")
 else()
     # Wersja bez CUDA
-    add_executable(StochasticTSP main.cpp
-            mainSeq.cpp) # Bez kernel.cu!
+    add_executable(StochasticTSP main.cpp)
 
     target_link_libraries(StochasticTSP
             PRIVATE
