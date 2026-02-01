@@ -4,6 +4,7 @@
 #include "TSPProblem.h"
 #include "GeneticAlgorithm.h"
 #include "Migrator.h"
+#include "SimpleProfiler.h"
 
 int main(int argc, char** argv) {
     // Inicjalizacja MPI z obsługą wielowątkowości (na wszelki wypadek dla CUDA)
@@ -15,12 +16,12 @@ int main(int argc, char** argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     // --- PARAMETRY ---
-    const int NUM_CITIES = 10000;
-    const int POP_SIZE = 20;       // Nieco mniejsza populacja bo mamy wiele wysp
-    const int GENERATIONS = 20;
+    const int NUM_CITIES = 100;
+    const int POP_SIZE = 100;       // Nieco mniejsza populacja bo mamy wiele wysp
+    const int GENERATIONS = 100;
     const int MC_SAMPLES = 100;
     const int MIGRATION_INTERVAL = 20; // Co ile generacji wymiana
-    const int testMC = true; // do testowania Monte Carlo na CPU
+    const int testMC = false; // do testowania Monte Carlo na CPU
 
     // 1. Wspólny problem (musi mieć ten sam seed!)
     TSPProblem problem(NUM_CITIES, 42);
@@ -53,23 +54,30 @@ int main(int argc, char** argv) {
 
     Migrator migrator(NUM_CITIES);
 
+    SimpleProfiler profiler;
+
     MPI_Barrier(MPI_COMM_WORLD); // Synchronizacja startu
     auto start = std::chrono::high_resolution_clock::now();
+    double globalStart = MPI_Wtime();
 
     // --- GŁÓWNA PĘTLA ---
     for (int i = 0; i < GENERATIONS; ++i) {
 
+        profiler.start("Computation");
         ga.runGeneration();
+        profiler.stop("Computation");
 
         // Migracja
         if (i % MIGRATION_INTERVAL == 0 && size > 1) {
             // Wymiana osobników
+            profiler.start("Migration (Wait + Data)");
             migrator.exchangeBest(ga.getPopulation());
 
             // Ważne: Po wymianie musimy przeliczyć fitness imigranta
             // (bo przyszedł z wyspy o innej funkcji celu!)
             // Dla prostoty przeliczamy całą populację (na GPU to szybkie, na CPU też bo deterministyczne)
             ga.reevaluatePopulation();
+            profiler.stop("Migration (Wait + Data)");
 
             if (rank == 0) {
                 std::cout << "[Rank 0] Generation " << i << " Best (MC): " << ga.getBestFitness() << " (Migration done)" << std::endl;
