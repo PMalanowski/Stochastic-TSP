@@ -6,17 +6,18 @@
 #include "Migrator.h"
 #include "SimpleProfiler.h"
 
+
 struct Config {
+    // struktura do trzymania parametrów
     int numCities = 100;
     int popSize = 500;
     int generations = 200;
     int mcSamples = 1000;
     int migrationInterval = 20;
-    unsigned int globalSeed = 0;
+    int globalSeed = 0;
 };
 
 int main(int argc, char** argv) {
-    // Inicjalizacja MPI z obsługą wielowątkowości (na wszelki wypadek dla CUDA)
     int provided;
     MPI_Init_thread(&argc, &argv, MPI_THREAD_FUNNELED, &provided);
 
@@ -27,10 +28,11 @@ int main(int argc, char** argv) {
 
     const int testMC = false; // do testowania Monte Carlo na CPU
 
-    // --- PARAMETRY ---
+    // ustawianie parametrów
     Config config;
     if (rank == 0) {
-        // Opcja: ./program N P G K Mig Seed
+        // do usatawiania parametrow w terminalu zamiast zmieniania w kodzie i buildowania co chwile
+        // w terminalu: ./StochasticTSP N P G K Mig Seed
         if (argc > 1) config.numCities = std::atoi(argv[1]);
         if (argc > 2) config.popSize = std::atoi(argv[2]);
         if (argc > 3) config.generations = std::atoi(argv[3]);
@@ -49,18 +51,19 @@ int main(int argc, char** argv) {
                   << ", Gen: " << config.generations << ", MC: " << config.mcSamples
                   << ", Seed: " << config.globalSeed << std::endl;
     }
-    std::cout << "[Rank " << rank << "] Connected. Creating TSP instance." <<std:: endl;
 
+
+    // wszystkie wezly musza rozwiazywac te sama instancje problemu
+    // wiec musimy wyslac seed (+ reszte parametrow zeby nie trzeba bylo buildowac tego za kazdym razem na obu kompach
     MPI_Bcast(&config, sizeof(Config), MPI_BYTE, 0, MPI_COMM_WORLD);
+    std::cout << "[Rank " << rank << "] Connected. Creating TSP instance using seed: "<< config.globalSeed <<std:: endl;
 
-    // 1. Wspólny problem (musi mieć ten sam seed!)
-    TSPProblem problem(config.numCities, 42);
+    TSPProblem problem(config.numCities, config.globalSeed);
 
-    // 2. Algorytm Genetyczny
-    // Każdy proces ma swój inny seed losowy, żeby eksplorować inne obszary
-    GeneticAlgorithm ga(problem, config.popSize, 1234 + rank);
+    // genetyczny, dodajemy rank do seeda zeby kazdy wezel w rozproszonym mial inny seed
+    GeneticAlgorithm ga(problem, config.popSize, config.globalSeed + rank);
 
-    // 3. Konfiguracja ról
+    // podzial na CPU i GPU node
     if (rank == 0) {
 #ifdef USE_CUDA
         std::cout << "[Rank 0 - GPU Node] OpenMP Threads: " << omp_get_max_threads() << std::endl;
@@ -77,38 +80,38 @@ int main(int argc, char** argv) {
         std::cout << "OpenMP Threads: " << omp_get_max_threads() << std::endl;
 #endif
     } else {
-        // SLAVE / CPU NODES
         std::cout << "[Rank " << rank << "- CPU Node] Running CPU Deterministic Mode. OpenMP Threads: " << omp_get_max_threads() << std::endl;
         ga.setMode(false, 0); // na laptopie tylko deterministyczny
     }
 
     Migrator migrator(config.numCities);
 
-    SimpleProfiler profiler;
+    // klasa specjalnie do badania wersji rozproszonej (robi csv'ki do diagramu gantta)
+    //SimpleProfiler profiler;
 
     MPI_Barrier(MPI_COMM_WORLD); // Synchronizacja startu
     auto start = std::chrono::high_resolution_clock::now();
-    double globalStart = MPI_Wtime();
+    //double globalStart = MPI_Wtime();
 
-    // --- GŁÓWNA PĘTLA ---
+    // glowna petla
     for (int i = 0; i < config.generations; ++i) {
 
-        profiler.start("Computation");
+        // start/stop do badania rozproszonego (ile czasu liczy)
+        //profiler.start("Computation");
         ga.runGeneration();
-        profiler.stop("Computation");
+        //profiler.stop("Computation");
 
-        // Migracja
+        // migracja (co migrationInterval generacji sie wysyla)
         if (i % config.migrationInterval == 0 && size > 1) {
-            // Wymiana osobników
-            profiler.start("Migration (Wait + Data)");
+            // start/stop do badania rozproszonego (ile czasu trwa migracja / ile czasu czeka na dane)
+            //profiler.start("Migration (Wait + Data)");
             migrator.exchangeBest(ga.getPopulation());
 
-            // Ważne: Po wymianie musimy przeliczyć fitness imigranta
-            // (bo przyszedł z wyspy o innej funkcji celu!)
-            // Dla prostoty przeliczamy całą populację (na GPU to szybkie, na CPU też bo deterministyczne)
+            // po wymianie trzeba przeliczyc fitness bo na innym wezle jest inna funkcja celu
             ga.reevaluatePopulation();
-            profiler.stop("Migration (Wait + Data)");
+            //profiler.stop("Migration (Wait + Data)");
 
+            // printujemy tylko wyniki z GPU node (przy kazdej migracji albo co 50 generacji)
             if (rank == 0) {
                 std::cout << "[Rank 0] Generation " << i << " Best (MC): " << ga.getBestFitness() << " (Migration done)" << std::endl;
             }
@@ -126,12 +129,13 @@ int main(int argc, char** argv) {
         std::cout << "Time: " << duration.count() << " ms" << std::endl;
     }
     else if (rank == 1) {
-         // Uwaga: Fitness na CPU jest liczony jako suma średnich, więc będzie niższy niż MC
+         // wynik na CPU bedzie zazwyczaj "lepszy" niz na GPU ale to dlatego, ze ma uproszczona funkcje celu
          std::cout << "--- FINAL RESULTS RANK 1 (CPU) ---" << std::endl;
          std::cout << "Best Fitness (Deterministic): " << ga.getBestFitness() << std::endl;
     }
 
-    profiler.saveToCSV();
+    // do zrobienia wykresu gantta
+    //profiler.saveToCSV();
 
     MPI_Finalize();
     return 0;

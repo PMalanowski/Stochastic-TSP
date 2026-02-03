@@ -6,7 +6,6 @@
 #include "TSPProblem.h"
 #include "Individual.h"
 
-// --- UPROSZCZONA KLASA GA (CZYSTA SEKWENCYJNA) ---
 class SequentialGA {
 private:
     const TSPProblem& problem;
@@ -31,7 +30,7 @@ public:
         }
     }
 
-    // Prosta selekcja
+    // selekcja
     int runTournament() {
         std::uniform_int_distribution<int> dist(0, popSize - 1);
         int bestIdx = dist(rng);
@@ -84,18 +83,18 @@ public:
         }
     }
 
-    // --- GŁÓWNA PĘTLA (BEZ OPENMP, BEZ CUDA) ---
+    // glowna petla sekwencyjna
     void runGeneration(bool useMonteCarlo, int kSamples) {
         newPopulation.clear();
         
-        // Elityzm
+        // elityzm
         auto bestIt = std::min_element(population.begin(), population.end(), 
             [](const Individual& a, const Individual& b){ return a.fitness < b.fitness; });
         newPopulation.push_back(*bestIt);
 
         std::uniform_real_distribution<float> prob(0.0f, 1.0f);
 
-        // Tworzenie nowej populacji
+        // tworzenie nowej populacji
         while(newPopulation.size() < popSize) {
             int p1 = runTournament();
             int p2 = runTournament();
@@ -106,10 +105,8 @@ public:
 
             mutate(child);
 
-            // EWALUACJA SEKWENCYJNA
+            // ewualuacja wzieta z klasy Individual
             if (useMonteCarlo) {
-                // To wywołuje metodę z Individual.h (musisz ją tam mieć!)
-                // Przekazujemy ten sam rng, bo jesteśmy na 1 wątku
                 child.evaluateMonteCarlo(problem, kSamples, rng);
             } else {
                 child.evaluateDeterministic(problem);
@@ -133,18 +130,17 @@ int main(int argc, char** argv) {
     int P = 100;    // Populacja
     int G = 100;     // Generacje
     int K = 1000;   // Symulacje MC
-    // Obsługa argumentów: ./StochasticTSP_Seq N P G K
+    // obsługa argumentów: ./StochasticTSP_Seq N P G K
     if (argc > 1) N = std::atoi(argv[1]);
     if (argc > 2) P = std::atoi(argv[2]);
     if (argc > 3) G = std::atoi(argv[3]);
-    if (argc > 4) K = std::atoi(argv[4]);
+    if (argc > 4) K = std::atoi(argv[4]); // jak K == 0 to ewaluacja deterministyczna
 
     std::cout << "--- SEQUENTIAL BENCHMARK ---" << std::endl;
     std::cout << "Cities: " << N << ", Pop: " << P << ", Gen: " << G << ", MC Samples: " << K << std::endl;
     
     TSPProblem problem(N, 42);
 
-    // 1. TEST DETERMINISTYCZNY
     if (K == 0)
     {
         std::cout << "\n[1] Running Deterministic (Relaxed)..." << std::endl;

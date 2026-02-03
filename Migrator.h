@@ -25,48 +25,32 @@ public:
         prevRank = (rank - 1 + size) % size;
     }
 
-    // Wymiana najlepszych osobników w pierścieniu
+    // wymiana najlepszych osobników
     void exchangeBest(std::vector<Individual>& population) {
-        if (size <= 1) return; // Brak migracji jeśli tylko 1 proces
+        if (size <= 1) return; // brak migracji jeśli tylko 1 proces
 
         // 1. Znajdź najlepszego u siebie
         auto bestIt = std::min_element(population.begin(), population.end(),
              [](const Individual& a, const Individual& b){ return a.fitness < b.fitness; });
 
-        // Przygotuj bufor do wysłania (sama ścieżka wystarczy, fitness przeliczy odbiorca)
+        // wysylamy sama sciezke bo fitness i tak trzeba przeliczyc
         std::vector<int> sendBuffer = bestIt->path;
         std::vector<int> recvBuffer(numCities);
 
-        // 2. MPI_Sendrecv - Wysyłamy do NEXT, odbieramy od PREV
-        // To jest bezpieczne i zapobiega zakleszczeniom (deadlock) w pierścieniu
+        // MPI_Sendrecv - Wysyłamy do NEXT, odbieramy od PREV
         MPI_Status status;
         MPI_Sendrecv(
-            sendBuffer.data(), numCities, MPI_INT, nextRank, 0, // Send params
-            recvBuffer.data(), numCities, MPI_INT, prevRank, 0, // Recv params
+            sendBuffer.data(), numCities, MPI_INT, nextRank, 0,
+            recvBuffer.data(), numCities, MPI_INT, prevRank, 0,
             MPI_COMM_WORLD, &status
         );
 
-        // 3. Wstaw odebranego osobnika do populacji
-        // Zastępujemy najgorszego osobnika, żeby nie psuć elityzmu
+        // zastępujemy najgorszego osobnika tym otrzymanym
         auto worstIt = std::max_element(population.begin(), population.end(),
              [](const Individual& a, const Individual& b){ return a.fitness < b.fitness; });
 
-        // Nadpisujemy ścieżkę najgorszego
         worstIt->path = recvBuffer;
-        // Fitness jest nieaktualny, zostanie przeliczony w następnej generacji
-        // Ustawiamy na 'nieskończoność' lub flagę, by wymusić ewaluację?
-        // W naszej pętli GA ewaluacja jest na końcu, więc musimy to zrobić ręcznie teraz
-        // Ale prościej: w następnej generacji zostanie wybrany do rodzicielstwa lub nie,
-        // a jego fitness zostanie zaktualizowany przy następnej okazji?
-        // W naszym kodzie GA 'population' jest już ocenione.
-        // Więc musimy nadać mu "bezpieczny" fitness, żeby przetrwał do następnej rundy selekcji.
-        worstIt->fitness = 999999.0f; // Tymczasowo słaby, ale w GA zostanie oceniony jeśli przetrwa?
-        // Wróć. Najlepiej byłoby ocenić go od razu, ale nie mamy dostępu do 'problem' tutaj łatwo.
-        // Zostawmy go z wysokim fitnessem, w następnym kroku GA i tak tworzymy nową populację z rodziców.
-        // Jeśli chcemy, by imigrant brał udział w reprodukcji natychmiast, powinien być dobry.
-
-        // Zróbmy tak: W main loop, po migracji, wywołamy ewaluację dla tego jednego imigranta
-        // (lub dla całej populacji jeśli to szybkie).
+        worstIt->fitness = 999999.0f;
     }
 };
 
